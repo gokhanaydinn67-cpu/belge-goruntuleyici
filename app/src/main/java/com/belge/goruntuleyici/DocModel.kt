@@ -54,23 +54,32 @@ object DocLoader {
             if (r.isNotEmpty()) {
                 r
             } else {
-                msg("Okuyucu boş sonuç verdi. Dosya içeriği: " + entries(path))
+                msg("Okuyucu boş sonuç verdi. Belge başlangıcı: " + snippet(path))
             }
         } catch (t: Throwable) {
             msg("Hata: " + t.javaClass.simpleName + " - " + t.message)
         }
     }
 
-    private fun entries(path: String): String {
+    private fun snippet(path: String): String {
         return try {
             val z = ZipFile(path)
             try {
-                z.entries().toList().take(12).joinToString(", ") { it.name }
+                val e = z.getEntry("word/document.xml")
+                if (e == null) {
+                    "document.xml yok"
+                } else {
+                    val bytes = z.getInputStream(e).use { it.readBytes() }
+                    val s = String(bytes, Charsets.UTF_8)
+                    val i = s.indexOf("<w:body")
+                    val from = if (i >= 0) i else 0
+                    s.substring(from, minOf(s.length, from + 600))
+                }
             } finally {
                 z.close()
             }
         } catch (t: Throwable) {
-            "zip açılamadı: " + t.message
+            "okunamadı: " + t.message
         }
     }
 }
