@@ -21,6 +21,7 @@ object DocxParser {
             val rels = readRels(zip)
             val entry = zip.getEntry("word/document.xml") ?: return emptyList()
             val p = Xml.newPullParser()
+            p.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, true)
             p.setInput(zip.getInputStream(entry), null)
             return readBody(p, path, rels)
         } finally {
@@ -49,8 +50,18 @@ object DocxParser {
         return if (target.startsWith("/")) target.substring(1) else "word/$target"
     }
 
+    private fun key(p: XmlPullParser): String {
+        val ns = p.namespace ?: ""
+        val n = p.name ?: ""
+        return when {
+            ns.contains("wordprocessingml") -> "w:$n"
+            ns.contains("drawingml") -> "a:$n"
+            else -> "x:$n"
+        }
+    }
+
     private fun flagOn(p: XmlPullParser): Boolean {
-        val v = p.getAttributeValue(null, "w:val")
+        val v = p.getAttributeValue(null, "val")
         return !(v == "0" || v == "false" || v == "off")
     }
 
@@ -93,7 +104,7 @@ object DocxParser {
         var ev = p.eventType
         while (ev != XmlPullParser.END_DOCUMENT) {
             if (ev == XmlPullParser.START_TAG) {
-                when (p.name) {
+                when (key(p)) {
                     "w:tbl" -> {
                         tblDepth++
                         if (tblDepth == 1) rows = ArrayList()
@@ -108,13 +119,13 @@ object DocxParser {
                     "w:pPr" -> inPPr = true
                     "w:pStyle" -> {
                         if (inPPr) {
-                            val s = p.getAttributeValue(null, "w:val") ?: ""
+                            val s = p.getAttributeValue(null, "val") ?: ""
                             stack.lastOrNull()?.heading = headingLevel(s)
                         }
                     }
                     "w:jc" -> {
                         if (inPPr && !inRun) {
-                            val v = p.getAttributeValue(null, "w:val")
+                            val v = p.getAttributeValue(null, "val")
                             stack.lastOrNull()?.align = when (v) {
                                 "center" -> 1
                                 "right", "end" -> 2
@@ -125,8 +136,8 @@ object DocxParser {
                     }
                     "w:ind" -> {
                         if (inPPr) {
-                            val left = p.getAttributeValue(null, "w:left")
-                                ?: p.getAttributeValue(null, "w:start")
+                            val left = p.getAttributeValue(null, "left")
+                                ?: p.getAttributeValue(null, "start")
                             stack.lastOrNull()?.indent = (left?.toFloatOrNull() ?: 0f) / 20f
                         }
                     }
@@ -149,17 +160,17 @@ object DocxParser {
                         if (inRPr) italic = flagOn(p)
                     }
                     "w:u" -> {
-                        if (inRPr) underline = p.getAttributeValue(null, "w:val") != "none"
+                        if (inRPr) underline = p.getAttributeValue(null, "val") != "none"
                     }
                     "w:sz" -> {
                         if (inRPr) {
-                            val v = p.getAttributeValue(null, "w:val")?.toFloatOrNull()
+                            val v = p.getAttributeValue(null, "val")?.toFloatOrNull()
                             if (v != null) size = v / 2f * (15f / 11f)
                         }
                     }
                     "w:color" -> {
                         if (inRPr) {
-                            val v = p.getAttributeValue(null, "w:val")
+                            val v = p.getAttributeValue(null, "val")
                             val c = if (v != null && v.length == 6) v.toIntOrNull(16) else null
                             if (c != null) color = c or 0xFF000000.toInt()
                         }
@@ -168,7 +179,7 @@ object DocxParser {
                     "w:tab" -> addRun("    ")
                     "w:br", "w:cr" -> addRun("\n")
                     "a:blip" -> {
-                        val embed = p.getAttributeValue(null, "r:embed")
+                        val embed = p.getAttributeValue(null, "embed")
                         val target = if (embed != null) rels[embed] else null
                         if (target != null) {
                             stack.lastOrNull()?.images?.add(entryName(target))
@@ -176,7 +187,7 @@ object DocxParser {
                     }
                 }
             } else if (ev == XmlPullParser.END_TAG) {
-                when (p.name) {
+                when (key(p)) {
                     "w:pPr" -> inPPr = false
                     "w:rPr" -> inRPr = false
                     "w:r" -> inRun = false
