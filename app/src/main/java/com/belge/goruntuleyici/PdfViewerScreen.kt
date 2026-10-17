@@ -1,9 +1,9 @@
 package com.belge.goruntuleyici
 
+import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.Color as AColor
-import android.graphics.pdf.PdfRenderer
-import android.os.ParcelFileDescriptor
+import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -21,20 +21,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,61 +45,93 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-class PdfDoc(path: String) {
-    private val pfd = ParcelFileDescriptor.open(
-        File(path), ParcelFileDescriptor.MODE_READ_ONLY
-    )
-    private val renderer = PdfRenderer(pfd)
-    val count: Int = renderer.pageCount
-
-    fun render(index: Int, width: Int): Bitmap {
-        synchronized(this) {
-            val page = renderer.openPage(index)
-            val h = (width.toFloat() / page.width * page.height).toInt()
-            val bmp = Bitmap.createBitmap(width, h, Bitmap.Config.ARGB_8888)
-            bmp.eraseColor(AColor.WHITE)
-            page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-            page.close()
-            return bmp
-        }
-    }
-
-    fun close() {
-        synchronized(this) {
-            renderer.close()
-            pfd.close()
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PdfViewerScreen(file: DocFile, onBack: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val doc = remember(file.path) { PdfDoc(file.path) }
     DisposableEffect(doc) { onDispose { doc.close() } }
     val listState = rememberLazyListState()
+
     var scale by remember { mutableFloatStateOf(1f) }
     var offX by remember { mutableFloatStateOf(0f) }
     var offY by remember { mutableFloatStateOf(0f) }
 
+    var searching by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+    var results by remember { mutableStateOf<List<Int>>(emptyList()) }
+    var current by remember { mutableIntStateOf(0) }
+
+    fun closeSearch() {
+        searching = false
+        query = ""
+        results = emptyList()
+        current = 0
+    }
+
+    fun runSearch() {
+        scope.launch {
+            val r = withContext(Dispatchers.IO) {
+                PdfTextSearch.search(context, file.path, query)
+            }
+            results = r
+            current = 0
+            if (r.isEmpty()) {
+                Toast.makeText(context, "Sonuç bulunamadı", Toast.LENGTH_SHORT).show()
+            } else {
+                listState.scrollToItem(r[0])
+            }
+        }
+    }
+
+    fun move(d: Int) {
+        if (results.isEmpty()) return
+        current = (current + d + results.size) % results.size
+        scope.launch { listState.scrollToItem(results[current]) }
+    }
+
+    fun share() {
+        try {
+            val uri = FileProvider.getUriForFile(
+                context, "com.belge.goruntuleyici.fileprovider", File(file.path)
+            )
+            val i = Intent(Intent.ACTION_SEND).apply {
+                type = "application/pdf"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(Intent.createChooser(i, "Paylaş"))
+        } catch (e: Exception) {
+            Toast.makeText(context, "Paylaşılamadı", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    BackHandler(enabled = searching) { closeSearch() }
+
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(file.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
-                    }
-                }
+            PdfTopBar(
+                title = file.name.substringBeforeLast('.'),
+                searching = searching,
+                query = query,
+                resultText = if (results.isEmpty()) "" else "${current + 1}/${results.size}",
+                onQueryChange = { query = it },
+                onSubmit = { runSearch() },
+                onBack = onBack,
+                onStartSearch = { searching = true },
+                onCloseSearch = { closeSearch() },
+                onPrev = { move(-1) },
+                onNext = { move(1) },
+                onShare = { share() }
             )
         }
     ) { padding ->
