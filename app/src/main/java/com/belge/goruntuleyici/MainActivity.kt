@@ -45,6 +45,8 @@ class MainActivity : ComponentActivity() {
 
     private val docTypes = setOf("docx", "docm", "dotx", "odt", "rtf")
 
+    private val sheetTypes = setOf("xlsx", "xlsm", "xltx", "ods")
+
     private val legacyPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { refresh() }
@@ -65,6 +67,8 @@ class MainActivity : ComponentActivity() {
                             PdfViewerScreen(current) { opened.value = null }
                         } else if (current.ext in docTypes) {
                             DocViewerScreen(current) { opened.value = null }
+                        } else if (current.ext in sheetTypes) {
+                            SheetViewerScreen(current) { opened.value = null }
                         } else {
                             TextViewerScreen(current) { opened.value = null }
                         }
@@ -96,7 +100,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openFile(f: DocFile) {
-        if (f.ext == "pdf" || f.ext in textTypes || f.ext in docTypes) {
+        val ok = f.ext == "pdf" || f.ext in textTypes ||
+            f.ext in docTypes || f.ext in sheetTypes
+        if (ok) {
             opened.value = f
         } else {
             Toast.makeText(this, "Bu tür henüz desteklenmiyor", Toast.LENGTH_SHORT).show()
