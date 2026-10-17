@@ -41,6 +41,8 @@ class MainActivity : ComponentActivity() {
     private val opened = mutableStateOf<DocFile?>(null)
     private val listQuery = mutableStateOf("")
     private val listSearching = mutableStateOf(false)
+    private val externalOpen = mutableStateOf(false)
+    private val loading = mutableStateOf(false)
 
     private val textTypes = setOf(
         "txt", "log", "csv", "tsv", "md", "xml", "json", "html"
@@ -60,6 +62,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (savedInstanceState == null) handleIntent(intent)
         setContent {
             val scheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()
             val listState = rememberLazyListState()
@@ -69,20 +72,27 @@ class MainActivity : ComponentActivity() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                     val current = opened.value
-                    if (hasAccess.value && current != null) {
-                        BackHandler { opened.value = null }
+                    if (current != null) {
+                        BackHandler { closeViewer() }
                         if (current.ext == "pdf") {
-                            PdfViewerScreen(current) { opened.value = null }
+                            PdfViewerScreen(current) { closeViewer() }
                         } else if (current.ext in docTypes) {
-                            DocViewerScreen(current) { opened.value = null }
+                            DocViewerScreen(current) { closeViewer() }
                         } else if (current.ext in sheetTypes) {
-                            SheetViewerScreen(current) { opened.value = null }
+                            SheetViewerScreen(current) { closeViewer() }
                         } else if (current.ext in deckTypes) {
-                            PptViewerScreen(current) { opened.value = null }
+                            PptViewerScreen(current) { closeViewer() }
                         } else if (current.ext in tiffTypes) {
-                            TiffViewerScreen(current) { opened.value = null }
+                            TiffViewerScreen(current) { closeViewer() }
                         } else {
-                            TextViewerScreen(current) { opened.value = null }
+                            TextViewerScreen(current) { closeViewer() }
+                        }
+                    } else if (loading.value) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("Açılıyor...")
                         }
                     } else if (hasAccess.value) {
                         FileListScreen(
@@ -119,10 +129,48 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun openFile(f: DocFile) {
-        val ok = f.ext == "pdf" || f.ext in textTypes || f.ext in docTypes ||
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun closeViewer() {
+        if (externalOpen.value) {
+            finish()
+        } else {
+            opened.value = null
+        }
+    }
+
+    private fun isSupported(f: DocFile): Boolean {
+        return f.ext == "pdf" || f.ext in textTypes || f.ext in docTypes ||
             f.ext in sheetTypes || f.ext in deckTypes || f.ext in tiffTypes
-        if (ok) {
+    }
+
+    private fun handleIntent(i: Intent?) {
+        if (i == null || i.action != Intent.ACTION_VIEW) return
+        loading.value = true
+        Thread {
+            val f = ExternalOpen.fromIntent(this, i)
+            runOnUiThread {
+                loading.value = false
+                if (f == null) {
+                    Toast.makeText(this, "Dosya açılamadı", Toast.LENGTH_SHORT).show()
+                    if (opened.value == null) finish()
+                } else if (isSupported(f)) {
+                    externalOpen.value = true
+                    opened.value = f
+                } else {
+                    Toast.makeText(this, "Bu tür henüz desteklenmiyor", Toast.LENGTH_SHORT).show()
+                    finish()
+                }
+            }
+        }.start()
+    }
+
+    private fun openFile(f: DocFile) {
+        if (isSupported(f)) {
             opened.value = f
         } else {
             Toast.makeText(this, "Bu tür henüz desteklenmiyor", Toast.LENGTH_SHORT).show()
