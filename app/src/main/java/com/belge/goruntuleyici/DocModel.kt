@@ -1,5 +1,7 @@
 package com.belge.goruntuleyici
 
+import java.util.zip.ZipFile
+
 data class DocRun(
     val text: String,
     val bold: Boolean = false,
@@ -34,10 +36,41 @@ fun DocBlock.text(): String = when (this) {
 }
 
 object DocLoader {
+
     fun load(path: String, ext: String): List<DocBlock> {
         return when (ext) {
-            "docx", "docm", "dotx" -> DocxParser.parse(path)
+            "docx", "docm", "dotx" -> loadDocx(path)
             else -> emptyList()
+        }
+    }
+
+    private fun msg(text: String): List<DocBlock> {
+        return listOf(ParaBlock(listOf(DocRun(text))))
+    }
+
+    private fun loadDocx(path: String): List<DocBlock> {
+        return try {
+            val r = DocxParser.parse(path)
+            if (r.isNotEmpty()) {
+                r
+            } else {
+                msg("Okuyucu boş sonuç verdi. Dosya içeriği: " + entries(path))
+            }
+        } catch (t: Throwable) {
+            msg("Hata: " + t.javaClass.simpleName + " - " + t.message)
+        }
+    }
+
+    private fun entries(path: String): String {
+        return try {
+            val z = ZipFile(path)
+            try {
+                z.entries().toList().take(12).joinToString(", ") { it.name }
+            } finally {
+                z.close()
+            }
+        } catch (t: Throwable) {
+            "zip açılamadı: " + t.message
         }
     }
 }
