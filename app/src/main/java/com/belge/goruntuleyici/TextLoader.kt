@@ -10,6 +10,9 @@ object TextLoader {
     private const val LIMIT = 5 * 1024 * 1024
 
     fun load(path: String): String {
+        if (path.endsWith(".udf", ignoreCase = true)) {
+            return UdfReader.read(path)
+        }
         val f = File(path)
         val size = minOf(f.length(), LIMIT.toLong()).toInt()
         val bytes = ByteArray(size)
