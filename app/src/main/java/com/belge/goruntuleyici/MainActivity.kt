@@ -13,6 +13,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -21,7 +22,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
@@ -43,29 +46,35 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme(colorScheme = lightColorScheme()) {
-                val current = opened.value
-                if (hasAccess.value && current != null) {
-                    BackHandler { opened.value = null }
-                    PdfViewerScreen(current) { opened.value = null }
-                } else if (hasAccess.value) {
-                    FileListScreen(files.value) { f -> openFile(f) }
-                } else {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+            val scheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()
+            MaterialTheme(colorScheme = scheme) {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    val current = opened.value
+                    if (hasAccess.value && current != null) {
+                        BackHandler { opened.value = null }
+                        PdfViewerScreen(current) { opened.value = null }
+                    } else if (hasAccess.value) {
+                        FileListScreen(files.value) { f -> openFile(f) }
+                    } else {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Text(
-                                text = "Belgeleri listelemek için dosya erişim izni gerekli",
-                                textAlign = TextAlign.Center
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Button(onClick = { askAccess() }) {
-                                Text("İzin ver")
+                            Column(
+                                modifier = Modifier.padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = "Belgeleri listelemek için dosya erişim izni gerekli",
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Button(onClick = { askAccess() }) {
+                                    Text("İzin ver")
+                                }
                             }
                         }
                     }
