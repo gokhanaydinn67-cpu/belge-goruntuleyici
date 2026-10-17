@@ -10,6 +10,7 @@ import android.os.Environment
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
@@ -33,6 +34,7 @@ class MainActivity : ComponentActivity() {
 
     private val files = mutableStateOf<List<DocFile>>(emptyList())
     private val hasAccess = mutableStateOf(false)
+    private val opened = mutableStateOf<DocFile?>(null)
 
     private val legacyPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -42,10 +44,12 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             MaterialTheme(colorScheme = lightColorScheme()) {
-                if (hasAccess.value) {
-                    FileListScreen(files.value) { f ->
-                        Toast.makeText(this@MainActivity, f.name, Toast.LENGTH_SHORT).show()
-                    }
+                val current = opened.value
+                if (hasAccess.value && current != null) {
+                    BackHandler { opened.value = null }
+                    PdfViewerScreen(current) { opened.value = null }
+                } else if (hasAccess.value) {
+                    FileListScreen(files.value) { f -> openFile(f) }
                 } else {
                     Box(
                         modifier = Modifier.fillMaxSize(),
@@ -67,6 +71,14 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+        }
+    }
+
+    private fun openFile(f: DocFile) {
+        if (f.ext == "pdf") {
+            opened.value = f
+        } else {
+            Toast.makeText(this, "Bu tür henüz desteklenmiyor", Toast.LENGTH_SHORT).show()
         }
     }
 
