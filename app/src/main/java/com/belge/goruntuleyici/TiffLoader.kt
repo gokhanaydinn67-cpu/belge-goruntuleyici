@@ -7,6 +7,7 @@ import java.io.File
 object TiffLoader {
 
     private val lock = Any()
+    private const val TARGET_WIDTH = 2000
 
     fun pageCount(path: String): Int {
         synchronized(lock) {
@@ -19,6 +20,22 @@ object TiffLoader {
                 1
             }
         }
+    }
+
+    private fun downscale(src: Bitmap, target: Int): Bitmap {
+        var b = src
+        while (b.width / 2 >= target) {
+            val half = Bitmap.createScaledBitmap(b, b.width / 2, b.height / 2, true)
+            if (b !== src) b.recycle()
+            b = half
+        }
+        if (b.width > target) {
+            val h = (b.height.toLong() * target / b.width).toInt().coerceAtLeast(1)
+            val s = Bitmap.createScaledBitmap(b, target, h, true)
+            if (b !== src) b.recycle()
+            b = s
+        }
+        return b
     }
 
     fun page(path: String, index: Int): Bitmap? {
@@ -36,7 +53,14 @@ object TiffLoader {
                 val d = TiffBitmapFactory.Options()
                 d.inDirectoryNumber = index
                 d.inSampleSize = sample
-                TiffBitmapFactory.decodeFile(file, d)
+                val full = TiffBitmapFactory.decodeFile(file, d)
+                if (full == null) {
+                    null
+                } else {
+                    val result = downscale(full, TARGET_WIDTH)
+                    if (result !== full) full.recycle()
+                    result
+                }
             } catch (t: Throwable) {
                 null
             }
