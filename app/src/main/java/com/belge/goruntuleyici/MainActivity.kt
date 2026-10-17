@@ -1,53 +1,157 @@
-<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
+package com.belge.goruntuleyici
 
-    <uses-permission
-        android:name="android.permission.READ_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.os.Environment
+import android.provider.Settings
+import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 
-    <application
-        android:icon="@mipmap/ic_launcher"
-        android:label="Belge Görüntüleyici"
-        android:theme="@android:style/Theme.Material.NoActionBar"
-        tools:replace="android:label">
+class MainActivity : ComponentActivity() {
 
-        <provider
-            android:name="androidx.core.content.FileProvider"
-            android:authorities="com.belge.goruntuleyici.fileprovider"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/file_paths" />
-        </provider>
+    private val files = mutableStateOf<List<DocFile>>(emptyList())
+    private val hasAccess = mutableStateOf(false)
+    private val opened = mutableStateOf<DocFile?>(null)
 
-        <activity
-            android:name=".MainActivity"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="application/pdf" />
-                <data android:mimeType="application/msword" />
-                <data android:mimeType="application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
-                <data android:mimeType="application/vnd.ms-excel" />
-                <data android:mimeType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
-                <data android:mimeType="application/vnd.ms-powerpoint" />
-                <data android:mimeType="application/vnd.openxmlformats-officedocument.presentationml.presentation" />
-                <data android:mimeType="application/vnd.oasis.opendocument.text" />
-                <data android:mimeType="application/vnd.oasis.opendocument.spreadsheet" />
-                <data android:mimeType="application/vnd.oasis.opendocument.presentation" />
-                <data android:mimeType="text/plain" />
-                <data android:mimeType="text/csv" />
-                <data android:mimeType="application/rtf" />
-            </intent-filter>
-        </activity>
+    private val textTypes = setOf(
+        "txt", "log", "csv", "tsv", "md", "xml", "json", "html"
+    )
 
-    </application>
-</manifest>
+    private val docTypes = setOf("docx", "docm", "dotx", "odt", "rtf")
+
+    private val sheetTypes = setOf("xlsx", "xlsm", "xltx", "ods")
+
+    private val deckTypes = setOf("pptx", "pptm", "ppsx", "odp")
+
+    private val tiffTypes = setOf("tif", "tiff")
+
+    private val legacyPermission = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { refresh() }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            val scheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()
+            MaterialTheme(colorScheme = scheme) {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    val current = opened.value
+                    if (hasAccess.value && current != null) {
+                        BackHandler { opened.value = null }
+                        if (current.ext == "pdf") {
+                            PdfViewerScreen(current) { opened.value = null }
+                        } else if (current.ext in docTypes) {
+                            DocViewerScreen(current) { opened.value = null }
+                        } else if (current.ext in sheetTypes) {
+                            SheetViewerScreen(current) { opened.value = null }
+                        } else if (current.ext in deckTypes) {
+                            PptViewerScreen(current) { opened.value = null }
+                        } else if (current.ext in tiffTypes) {
+                            TiffViewerScreen(current) { opened.value = null }
+                        } else {
+                            TextViewerScreen(current) { opened.value = null }
+                        }
+                    } else if (hasAccess.value) {
+                        FileListScreen(files.value) { f -> openFile(f) }
+                    } else {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = "Belgeleri listelemek için dosya erişim izni gerekli",
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Button(onClick = { askAccess() }) {
+                                    Text("İzin ver")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun openFile(f: DocFile) {
+        val ok = f.ext == "pdf" || f.ext in textTypes || f.ext in docTypes ||
+            f.ext in sheetTypes || f.ext in deckTypes || f.ext in tiffTypes
+        if (ok) {
+            opened.value = f
+        } else {
+            Toast.makeText(this, "Bu tür henüz desteklenmiyor", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        refresh()
+    }
+
+    private fun checkAccess(): Boolean {
+        return if (Build.VERSION.SDK_INT >= 30) {
+            Environment.isExternalStorageManager()
+        } else {
+            ContextCompat.checkSelfPermission(
+                this, Manifest.permission.READ_EXTERNAL_STORAGE
+            ) == PackageManager.PERMISSION_GRANTED
+        }
+    }
+
+    private fun refresh() {
+        val ok = checkAccess()
+        hasAccess.value = ok
+        if (ok) {
+            Thread {
+                val list = FileScanner.scan()
+                runOnUiThread { files.value = list }
+            }.start()
+        }
+    }
+
+    private fun askAccess() {
+        if (Build.VERSION.SDK_INT >= 30) {
+            val i = Intent(
+                Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                Uri.parse("package:$packageName")
+            )
+            startActivity(i)
+        } else {
+            legacyPermission.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+    }
+}
