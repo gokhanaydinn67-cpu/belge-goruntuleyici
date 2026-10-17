@@ -39,6 +39,10 @@ class MainActivity : ComponentActivity() {
     private val hasAccess = mutableStateOf(false)
     private val opened = mutableStateOf<DocFile?>(null)
 
+    private val textTypes = setOf(
+        "txt", "log", "csv", "tsv", "md", "xml", "json", "html"
+    )
+
     private val legacyPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { refresh() }
@@ -55,7 +59,11 @@ class MainActivity : ComponentActivity() {
                     val current = opened.value
                     if (hasAccess.value && current != null) {
                         BackHandler { opened.value = null }
-                        PdfViewerScreen(current) { opened.value = null }
+                        if (current.ext == "pdf") {
+                            PdfViewerScreen(current) { opened.value = null }
+                        } else {
+                            TextViewerScreen(current) { opened.value = null }
+                        }
                     } else if (hasAccess.value) {
                         FileListScreen(files.value) { f -> openFile(f) }
                     } else {
@@ -84,7 +92,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openFile(f: DocFile) {
-        if (f.ext == "pdf") {
+        if (f.ext == "pdf" || f.ext in textTypes) {
             opened.value = f
         } else {
             Toast.makeText(this, "Bu tür henüz desteklenmiyor", Toast.LENGTH_SHORT).show()
