@@ -49,6 +49,8 @@ class MainActivity : ComponentActivity() {
 
     private val deckTypes = setOf("pptx", "pptm", "ppsx", "odp")
 
+    private val tiffTypes = setOf("tif", "tiff")
+
     private val legacyPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { refresh() }
@@ -73,6 +75,8 @@ class MainActivity : ComponentActivity() {
                             SheetViewerScreen(current) { opened.value = null }
                         } else if (current.ext in deckTypes) {
                             PptViewerScreen(current) { opened.value = null }
+                        } else if (current.ext in tiffTypes) {
+                            TiffViewerScreen(current) { opened.value = null }
                         } else {
                             TextViewerScreen(current) { opened.value = null }
                         }
@@ -105,7 +109,7 @@ class MainActivity : ComponentActivity() {
 
     private fun openFile(f: DocFile) {
         val ok = f.ext == "pdf" || f.ext in textTypes || f.ext in docTypes ||
-            f.ext in sheetTypes || f.ext in deckTypes
+            f.ext in sheetTypes || f.ext in deckTypes || f.ext in tiffTypes
         if (ok) {
             opened.value = f
         } else {
