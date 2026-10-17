@@ -21,7 +21,7 @@ object TiffLoader {
         }
     }
 
-    fun page(path: String, index: Int, maxWidth: Int): Bitmap? {
+    fun page(path: String, index: Int): Bitmap? {
         synchronized(lock) {
             return try {
                 val file = File(path)
@@ -30,7 +30,9 @@ object TiffLoader {
                 o.inDirectoryNumber = index
                 TiffBitmapFactory.decodeFile(file, o)
                 var sample = 1
-                while (o.outWidth / sample > maxWidth) sample *= 2
+                while ((o.outWidth.toLong() / sample) * (o.outHeight.toLong() / sample) > 16000000L) {
+                    sample *= 2
+                }
                 val d = TiffBitmapFactory.Options()
                 d.inDirectoryNumber = index
                 d.inSampleSize = sample
