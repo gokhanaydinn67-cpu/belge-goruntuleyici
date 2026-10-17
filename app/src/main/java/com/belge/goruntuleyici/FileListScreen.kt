@@ -13,7 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.HorizontalDivider
@@ -62,11 +62,16 @@ private fun filterFiles(files: List<DocFile>, q: String): List<DocFile> {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun FileListScreen(files: List<DocFile>, onOpen: (DocFile) -> Unit) {
+fun FileListScreen(
+    files: List<DocFile>,
+    listState: LazyListState,
+    query: String,
+    searching: Boolean,
+    onQueryChange: (String) -> Unit,
+    onSearchingChange: (Boolean) -> Unit,
+    onOpen: (DocFile) -> Unit
+) {
     val context = LocalContext.current
-    val listState = rememberLazyListState()
-    var searching by remember { mutableStateOf(false) }
-    var query by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
 
     val shown = remember(files, query) { filterFiles(files, query) }
@@ -79,8 +84,8 @@ fun FileListScreen(files: List<DocFile>, onOpen: (DocFile) -> Unit) {
         if (selected.isNotEmpty()) {
             selected = emptySet()
         } else {
-            searching = false
-            query = ""
+            onSearchingChange(false)
+            onQueryChange("")
         }
     }
 
@@ -90,11 +95,11 @@ fun FileListScreen(files: List<DocFile>, onOpen: (DocFile) -> Unit) {
                 searching = searching,
                 query = query,
                 selectedCount = selected.size,
-                onQueryChange = { query = it },
-                onStartSearch = { searching = true },
+                onQueryChange = onQueryChange,
+                onStartSearch = { onSearchingChange(true) },
                 onCloseSearch = {
-                    searching = false
-                    query = ""
+                    onSearchingChange(false)
+                    onQueryChange("")
                 },
                 onClearSelection = { selected = emptySet() },
                 onShare = {
