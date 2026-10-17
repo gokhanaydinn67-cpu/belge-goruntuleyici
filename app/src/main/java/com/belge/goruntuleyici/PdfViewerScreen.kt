@@ -6,6 +6,11 @@ import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -27,12 +32,22 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChanged
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -73,6 +88,9 @@ fun PdfViewerScreen(file: DocFile, onBack: () -> Unit) {
     val doc = remember(file.path) { PdfDoc(file.path) }
     DisposableEffect(doc) { onDispose { doc.close() } }
     val listState = rememberLazyListState()
+    var scale by remember { mutableFloatStateOf(1f) }
+    var offX by remember { mutableFloatStateOf(0f) }
+    var offY by remember { mutableFloatStateOf(0f) }
 
     Scaffold(
         topBar = {
@@ -95,32 +113,82 @@ fun PdfViewerScreen(file: DocFile, onBack: () -> Unit) {
                 .background(Color(0xFFE0E0E0))
         ) {
             val widthPx = with(LocalDensity.current) { maxWidth.roundToPx() }
+            val wPx = constraints.maxWidth.toFloat()
+            val hPx = constraints.maxHeight.toFloat()
 
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                items(count = doc.count) { i ->
-                    val bmp by produceState<Bitmap?>(null, i) {
-                        value = withContext(Dispatchers.Default) {
-                            doc.render(i, widthPx)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clipToBounds()
+                    .pointerInput(wPx, hPx) {
+                        awaitEachGesture {
+                            awaitFirstDown(
+                                requireUnconsumed = false,
+                                pass = PointerEventPass.Initial
+                            )
+                            do {
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                val multi = event.changes.size >= 2
+                                if (multi || scale > 1f) {
+                                    val zoom = event.calculateZoom()
+                                    val pan = event.calculatePan()
+                                    val c = event.calculateCentroid(useCurrent = false)
+                                    if (c.isSpecified) {
+                                        val newScale = (scale * zoom).coerceIn(1f, 5f)
+                                        val ratio = newScale / scale
+                                        val nx = c.x - (c.x - offX) * ratio + pan.x
+                                        val ny = c.y - (c.y - offY) * ratio + pan.y
+                                        val minX = -(newScale - 1f) * wPx
+                                        val minY = -(newScale - 1f) * hPx
+                                        val cx = nx.coerceIn(minX, 0f)
+                                        val cy = ny.coerceIn(minY, 0f)
+                                        listState.dispatchRawDelta(-(ny - cy) / newScale)
+                                        scale = newScale
+                                        offX = cx
+                                        offY = cy
+                                    }
+                                    event.changes.forEach {
+                                        if (it.positionChanged()) it.consume()
+                                    }
+                                }
+                            } while (event.changes.any { it.pressed })
                         }
                     }
-                    val b = bmp
-                    if (b != null) {
-                        Image(
-                            bitmap = b.asImageBitmap(),
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(400.dp)
-                                .background(Color.White)
-                        )
+                    .graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                        translationX = offX
+                        translationY = offY
+                        transformOrigin = TransformOrigin(0f, 0f)
+                    }
+            ) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(count = doc.count) { i ->
+                        val bmp by produceState<Bitmap?>(null, i) {
+                            value = withContext(Dispatchers.Default) {
+                                doc.render(i, (widthPx * 1.5f).toInt())
+                            }
+                        }
+                        val b = bmp
+                        if (b != null) {
+                            Image(
+                                bitmap = b.asImageBitmap(),
+                                contentDescription = null,
+                                contentScale = ContentScale.FillWidth,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(400.dp)
+                                    .background(Color.White)
+                            )
+                        }
                     }
                 }
             }
