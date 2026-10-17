@@ -1,20 +1,35 @@
 package com.belge.goruntuleyici
 
-import androidx.compose.foundation.clickable
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import java.text.SimpleDateFormat
@@ -33,37 +48,122 @@ private fun formatDate(t: Long): String {
     return SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()).format(Date(t))
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+private fun filterFiles(files: List<DocFile>, q: String): List<DocFile> {
+    val s = q.trim()
+    if (s.isEmpty()) return files
+    if (s.startsWith(".")) {
+        val ext = s.substring(1).lowercase()
+        if (ext.isEmpty()) return files
+        val exact = files.filter { it.ext == ext }
+        return if (exact.isNotEmpty()) exact else files.filter { it.ext.startsWith(ext) }
+    }
+    return files.filter { it.name.contains(s, ignoreCase = true) }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun FileListScreen(files: List<DocFile>, onOpen: (DocFile) -> Unit) {
+    val context = LocalContext.current
+    val listState = rememberLazyListState()
+    var searching by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+    var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
+
+    val shown = remember(files, query) { filterFiles(files, query) }
+
+    fun toggle(path: String) {
+        selected = if (path in selected) selected - path else selected + path
+    }
+
+    BackHandler(enabled = selected.isNotEmpty() || searching) {
+        if (selected.isNotEmpty()) {
+            selected = emptySet()
+        } else {
+            searching = false
+            query = ""
+        }
+    }
+
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Belge Görüntüleyici") }) }
+        topBar = {
+            FileListTopBar(
+                searching = searching,
+                query = query,
+                selectedCount = selected.size,
+                onQueryChange = { query = it },
+                onStartSearch = { searching = true },
+                onCloseSearch = {
+                    searching = false
+                    query = ""
+                },
+                onClearSelection = { selected = emptySet() },
+                onShare = {
+                    val picked = files.filter { it.path in selected }
+                    ShareHelper.share(context, picked)
+                }
+            )
+        }
     ) { padding ->
-        LazyColumn(
+        Box(
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
         ) {
-            items(files) { f ->
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onOpen(f) }
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
-                ) {
-                    Text(
-                        text = f.name,
-                        style = MaterialTheme.typography.bodyLarge,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = f.ext.uppercase() + "  •  " + formatSize(f.size) + "  •  " + formatDate(f.modified),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+            if (shown.isEmpty()) {
+                Text(
+                    text = "Dosya bulunamadı",
+                    modifier = Modifier.align(Alignment.Center)
+                )
+            } else {
+                LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+                    items(count = shown.size, key = { shown[it].path }) { i ->
+                        val f = shown[i]
+                        val isSel = f.path in selected
+                        val bg = if (isSel) {
+                            MaterialTheme.colorScheme.secondaryContainer
+                        } else {
+                            Color.Transparent
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(bg)
+                                .combinedClickable(
+                                    onClick = {
+                                        if (selected.isNotEmpty()) toggle(f.path) else onOpen(f)
+                                    },
+                                    onLongClick = { toggle(f.path) }
+                                )
+                                .padding(start = 16.dp, end = 28.dp, top = 12.dp, bottom = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (isSel) {
+                                Icon(
+                                    Icons.Filled.CheckCircle,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                            }
+                            Column {
+                                Text(
+                                    text = f.name,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = f.ext.uppercase() + "  •  " +
+                                        formatSize(f.size) + "  •  " + formatDate(f.modified),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        HorizontalDivider()
+                    }
                 }
-                HorizontalDivider()
+                FastScroller(listState, Modifier.align(Alignment.CenterEnd))
             }
         }
     }
