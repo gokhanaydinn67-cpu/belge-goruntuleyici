@@ -43,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -194,7 +195,7 @@ fun TiffViewerScreen(file: DocFile, onBack: () -> Unit) {
                         items(count) { i ->
                             val st by produceState<Pair<Boolean, Bitmap?>>(Pair(false, null), i) {
                                 val bmp = withContext(Dispatchers.IO) {
-                                    TiffLoader.page(file.path, i, 1800)
+                                    TiffLoader.page(file.path, i)
                                 }
                                 value = Pair(true, bmp)
                             }
@@ -204,6 +205,7 @@ fun TiffViewerScreen(file: DocFile, onBack: () -> Unit) {
                                     bitmap = b.asImageBitmap(),
                                     contentDescription = null,
                                     contentScale = ContentScale.FillWidth,
+                                    filterQuality = FilterQuality.High,
                                     modifier = Modifier.fillMaxWidth()
                                 )
                             } else {
