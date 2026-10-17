@@ -54,4 +54,5 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+    implementation("io.github.beyka:Android-TiffBitmapFactory:0.9.9.1")
 }
