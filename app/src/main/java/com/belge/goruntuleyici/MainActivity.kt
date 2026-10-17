@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -38,6 +39,8 @@ class MainActivity : ComponentActivity() {
     private val files = mutableStateOf<List<DocFile>>(emptyList())
     private val hasAccess = mutableStateOf(false)
     private val opened = mutableStateOf<DocFile?>(null)
+    private val listQuery = mutableStateOf("")
+    private val listSearching = mutableStateOf(false)
 
     private val textTypes = setOf(
         "txt", "log", "csv", "tsv", "md", "xml", "json", "html"
@@ -59,6 +62,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             val scheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()
+            val listState = rememberLazyListState()
             MaterialTheme(colorScheme = scheme) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
@@ -81,7 +85,15 @@ class MainActivity : ComponentActivity() {
                             TextViewerScreen(current) { opened.value = null }
                         }
                     } else if (hasAccess.value) {
-                        FileListScreen(files.value) { f -> openFile(f) }
+                        FileListScreen(
+                            files = files.value,
+                            listState = listState,
+                            query = listQuery.value,
+                            searching = listSearching.value,
+                            onQueryChange = { listQuery.value = it },
+                            onSearchingChange = { listSearching.value = it },
+                            onOpen = { f -> openFile(f) }
+                        )
                     } else {
                         Box(
                             modifier = Modifier.fillMaxSize(),
