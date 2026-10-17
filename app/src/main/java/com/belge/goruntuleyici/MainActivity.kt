@@ -43,7 +43,7 @@ class MainActivity : ComponentActivity() {
         "txt", "log", "csv", "tsv", "md", "xml", "json", "html"
     )
 
-    private val docTypes = setOf("docx", "docm", "dotx")
+    private val docTypes = setOf("docx", "docm", "dotx", "odt", "rtf")
 
     private val legacyPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
