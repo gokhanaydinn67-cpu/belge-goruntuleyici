@@ -45,7 +45,7 @@ class MainActivity : ComponentActivity() {
     private val loading = mutableStateOf(false)
 
     private val textTypes = setOf(
-        "txt", "log", "csv", "tsv", "md", "xml", "json", "html"
+        "txt", "log", "csv", "tsv", "md", "xml", "json", "html", "udf"
     )
 
     private val docTypes = setOf("docx", "docm", "dotx", "odt", "rtf")
