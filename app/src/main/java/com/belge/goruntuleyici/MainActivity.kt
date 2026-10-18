@@ -102,6 +102,7 @@ class MainActivity : ComponentActivity() {
                             searching = listSearching.value,
                             onQueryChange = { listQuery.value = it },
                             onSearchingChange = { listSearching.value = it },
+                            onRefresh = { refresh() },
                             onOpen = { f -> openFile(f) }
                         )
                     } else {
