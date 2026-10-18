@@ -1,22 +1,13 @@
 package com.belge.goruntuleyici
 
 import android.content.Intent
-import android.graphics.Bitmap
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.calculateCentroid
-import androidx.compose.foundation.gestures.calculatePan
-import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -26,27 +17,22 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.positionChanged
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
@@ -58,18 +44,60 @@ import java.io.File
 fun PdfViewerScreen(file: DocFile, onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val density = LocalDensity.current.density
+    val clipboard = LocalClipboardManager.current
     val doc = remember(file.path) { PdfDoc(file.path) }
-    DisposableEffect(doc) { onDispose { doc.close() } }
+    val index = remember(file.path) { PdfTextIndex(context, file.path) }
+    DisposableEffect(doc) {
+        onDispose {
+            doc.close()
+            index.close()
+        }
+    }
     val listState = rememberLazyListState()
-
-    var scale by remember { mutableFloatStateOf(1f) }
-    var offX by remember { mutableFloatStateOf(0f) }
-    var offY by remember { mutableFloatStateOf(0f) }
+    val zoom = remember { ZoomState() }
 
     var searching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<Int>>(emptyList()) }
     var current by remember { mutableIntStateOf(0) }
+
+    var sel by remember { mutableStateOf<PdfSel?>(null) }
+    var selText by remember { mutableStateOf<PdfPageText?>(null) }
+    val selState = rememberUpdatedState(sel)
+    val textState = rememberUpdatedState(selText)
+
+    fun clearSelection() {
+        sel = null
+        selText = null
+    }
+
+    val actions = remember {
+        SelectionActions(
+            onLongPress = { page, fx, fy ->
+                scope.launch {
+                    val t = withContext(Dispatchers.IO) { index.page(page) }
+                    if (t.chars.isEmpty()) {
+                        Toast.makeText(
+                            context, "Bu sayfada seçilebilir yazı yok", Toast.LENGTH_SHORT
+                        ).show()
+                    } else {
+                        val n = PdfSelect.nearest(t, fx, fy)
+                        if (n.first >= 0 && n.second < 60f) {
+                            val r = PdfSelect.wordRange(t, n.first)
+                            selText = t
+                            sel = PdfSel(page, r.first, r.second)
+                        }
+                    }
+                }
+            },
+            onTapOutside = {
+                sel = null
+                selText = null
+            },
+            onChange = { sel = it }
+        )
+    }
 
     fun closeSearch() {
         searching = false
@@ -115,7 +143,9 @@ fun PdfViewerScreen(file: DocFile, onBack: () -> Unit) {
         }
     }
 
-    BackHandler(enabled = searching) { closeSearch() }
+    BackHandler(enabled = searching || sel != null) {
+        if (sel != null) clearSelection() else closeSearch()
+    }
 
     Scaffold(
         topBar = {
@@ -149,45 +179,14 @@ fun PdfViewerScreen(file: DocFile, onBack: () -> Unit) {
                 modifier = Modifier
                     .fillMaxSize()
                     .clipToBounds()
-                    .pointerInput(wPx, hPx) {
-                        awaitEachGesture {
-                            awaitFirstDown(
-                                requireUnconsumed = false,
-                                pass = PointerEventPass.Initial
-                            )
-                            do {
-                                val event = awaitPointerEvent(PointerEventPass.Initial)
-                                val multi = event.changes.size >= 2
-                                if (multi || scale > 1f) {
-                                    val zoom = event.calculateZoom()
-                                    val pan = event.calculatePan()
-                                    val c = event.calculateCentroid(useCurrent = false)
-                                    if (c.isSpecified) {
-                                        val newScale = (scale * zoom).coerceIn(1f, 5f)
-                                        val ratio = newScale / scale
-                                        val nx = c.x - (c.x - offX) * ratio + pan.x
-                                        val ny = c.y - (c.y - offY) * ratio + pan.y
-                                        val minX = -(newScale - 1f) * wPx
-                                        val minY = -(newScale - 1f) * hPx
-                                        val cx = nx.coerceIn(minX, 0f)
-                                        val cy = ny.coerceIn(minY, 0f)
-                                        listState.dispatchRawDelta(-(ny - cy) / newScale)
-                                        scale = newScale
-                                        offX = cx
-                                        offY = cy
-                                    }
-                                    event.changes.forEach {
-                                        if (it.positionChanged()) it.consume()
-                                    }
-                                }
-                            } while (event.changes.any { it.pressed })
-                        }
-                    }
+                    .pdfGestures(
+                        wPx, hPx, density, listState, zoom, selState, textState, actions
+                    )
                     .graphicsLayer {
-                        scaleX = scale
-                        scaleY = scale
-                        translationX = offX
-                        translationY = offY
+                        scaleX = zoom.scale
+                        scaleY = zoom.scale
+                        translationX = zoom.offX
+                        translationY = zoom.offY
                         transformOrigin = TransformOrigin(0f, 0f)
                     }
             ) {
@@ -197,27 +196,7 @@ fun PdfViewerScreen(file: DocFile, onBack: () -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     items(count = doc.count) { i ->
-                        val bmp by produceState<Bitmap?>(null, i) {
-                            value = withContext(Dispatchers.Default) {
-                                doc.render(i, (widthPx * 1.5f).toInt())
-                            }
-                        }
-                        val b = bmp
-                        if (b != null) {
-                            Image(
-                                bitmap = b.asImageBitmap(),
-                                contentDescription = null,
-                                contentScale = ContentScale.FillWidth,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        } else {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(400.dp)
-                                    .background(Color.White)
-                            )
-                        }
+                        PdfPageItem(doc, i, widthPx, sel, selText)
                     }
                 }
             }
@@ -232,6 +211,32 @@ fun PdfViewerScreen(file: DocFile, onBack: () -> Unit) {
                 Text(
                     text = "${listState.firstVisibleItemIndex + 1} / ${doc.count}",
                     color = Color.White
+                )
+            }
+
+            if (sel != null) {
+                PdfSelectionBar(
+                    onCopy = {
+                        val s = sel
+                        val t = selText
+                        if (s != null && t != null) {
+                            val txt = PdfSelect.selectedText(t, s.start, s.end)
+                            clipboard.setText(AnnotatedString(txt))
+                            Toast.makeText(context, "Kopyalandı", Toast.LENGTH_SHORT).show()
+                            clearSelection()
+                        }
+                    },
+                    onSelectAll = {
+                        val s = sel
+                        val t = selText
+                        if (s != null && t != null && t.chars.isNotEmpty()) {
+                            sel = PdfSel(s.page, 0, t.chars.size - 1)
+                        }
+                    },
+                    onClose = { clearSelection() },
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 12.dp)
                 )
             }
         }
