@@ -1,5 +1,6 @@
 package com.belge.goruntuleyici
 
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -25,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,6 +34,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -69,12 +74,19 @@ fun FileListScreen(
     searching: Boolean,
     onQueryChange: (String) -> Unit,
     onSearchingChange: (Boolean) -> Unit,
+    onRefresh: () -> Unit,
     onOpen: (DocFile) -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var showMove by remember { mutableStateOf(false) }
+    var showDelete by remember { mutableStateOf(false) }
+    var showRename by remember { mutableStateOf(false) }
+    var showDetails by remember { mutableStateOf(false) }
 
     val shown = remember(files, query) { filterFiles(files, query) }
+    val picked = files.filter { it.path in selected }
 
     fun toggle(path: String) {
         selected = if (path in selected) selected - path else selected + path
@@ -102,11 +114,23 @@ fun FileListScreen(
                     onQueryChange("")
                 },
                 onClearSelection = { selected = emptySet() },
-                onShare = {
-                    val picked = files.filter { it.path in selected }
-                    ShareHelper.share(context, picked)
-                }
+                onShare = { ShareHelper.share(context, picked) }
             )
+        },
+        bottomBar = {
+            if (selected.isNotEmpty()) {
+                FileActionBar(
+                    single = selected.size == 1,
+                    onShare = { ShareHelper.share(context, picked) },
+                    onMove = { showMove = true },
+                    onDelete = { showDelete = true },
+                    onOpenOther = {
+                        if (picked.size == 1) FileOps.openOther(context, picked[0])
+                    },
+                    onRename = { showRename = true },
+                    onDetails = { showDetails = true }
+                )
+            }
         }
     ) { padding ->
         Box(
@@ -171,5 +195,62 @@ fun FileListScreen(
                 FastScroller(listState, Modifier.align(Alignment.CenterEnd))
             }
         }
+    }
+
+    if (showMove) {
+        FolderPickerDialog(
+            onPick = { dest ->
+                showMove = false
+                val list = picked
+                scope.launch {
+                    val n = withContext(Dispatchers.IO) { FileOps.move(list, dest) }
+                    Toast.makeText(context, "$n dosya taşındı", Toast.LENGTH_SHORT).show()
+                    selected = emptySet()
+                    onRefresh()
+                }
+            },
+            onDismiss = { showMove = false }
+        )
+    }
+
+    if (showDelete) {
+        DeleteDialog(
+            count = picked.size,
+            onConfirm = {
+                showDelete = false
+                val list = picked
+                scope.launch {
+                    val n = withContext(Dispatchers.IO) { FileOps.delete(list) }
+                    Toast.makeText(context, "$n dosya silindi", Toast.LENGTH_SHORT).show()
+                    selected = emptySet()
+                    onRefresh()
+                }
+            },
+            onDismiss = { showDelete = false }
+        )
+    }
+
+    if (showRename && picked.size == 1) {
+        RenameDialog(
+            initial = picked[0].name,
+            onConfirm = { newName ->
+                showRename = false
+                val ok = FileOps.rename(picked[0], newName)
+                if (ok) {
+                    Toast.makeText(context, "Ad değiştirildi", Toast.LENGTH_SHORT).show()
+                    selected = emptySet()
+                    onRefresh()
+                } else {
+                    Toast.makeText(
+                        context, "Ad değiştirilemedi (aynı ad olabilir)", Toast.LENGTH_SHORT
+                    ).show()
+                }
+            },
+            onDismiss = { showRename = false }
+        )
+    }
+
+    if (showDetails && picked.isNotEmpty()) {
+        DetailsDialog(text = FileOps.details(picked), onDismiss = { showDetails = false })
     }
 }
