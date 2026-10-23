@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -38,6 +39,7 @@ class MainActivity : ComponentActivity() {
 
     private val files = mutableStateOf<List<DocFile>>(emptyList())
     private val hasAccess = mutableStateOf(false)
+    private val scanned = mutableStateOf(false)
     private val opened = mutableStateOf<DocFile?>(null)
     private val listQuery = mutableStateOf("")
     private val listSearching = mutableStateOf(false)
@@ -93,6 +95,17 @@ class MainActivity : ComponentActivity() {
                             contentAlignment = Alignment.Center
                         ) {
                             Text("Açılıyor...")
+                        }
+                    } else if (hasAccess.value && !scanned.value) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                CircularProgressIndicator()
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text("Dosyalar taranıyor...")
+                            }
                         }
                     } else if (hasAccess.value) {
                         FileListScreen(
@@ -199,7 +212,10 @@ class MainActivity : ComponentActivity() {
         if (ok) {
             Thread {
                 val list = FileScanner.scan()
-                runOnUiThread { files.value = list }
+                runOnUiThread {
+                    files.value = list
+                    scanned.value = true
+                }
             }.start()
         }
     }
