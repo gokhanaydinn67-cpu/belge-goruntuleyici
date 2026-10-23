@@ -4,6 +4,7 @@ import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -59,8 +60,10 @@ fun PdfViewerScreen(file: DocFile, onBack: () -> Unit) {
 
     var searching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
-    var results by remember { mutableStateOf<List<Int>>(emptyList()) }
+    var matches by remember { mutableStateOf<List<PdfMatch>>(emptyList()) }
+    var matchTexts by remember { mutableStateOf<Map<Int, PdfPageText>>(emptyMap()) }
     var current by remember { mutableIntStateOf(0) }
+    val matchesByPage = remember(matches) { matches.groupBy { it.page } }
 
     var sel by remember { mutableStateOf<PdfSel?>(null) }
     var selText by remember { mutableStateOf<PdfPageText?>(null) }
@@ -102,29 +105,43 @@ fun PdfViewerScreen(file: DocFile, onBack: () -> Unit) {
     fun closeSearch() {
         searching = false
         query = ""
-        results = emptyList()
+        matches = emptyList()
+        matchTexts = emptyMap()
         current = 0
     }
 
+    suspend fun goToMatch(m: PdfMatch) {
+        listState.scrollToItem(m.page)
+        val info = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == m.page }
+        val t = matchTexts[m.page]
+        if (info != null && t != null && t.chars.isNotEmpty()) {
+            val c = t.chars[m.start.coerceIn(0, t.chars.size - 1)]
+            listState.scrollBy(c.t * info.size - 160f)
+        }
+    }
+
     fun runSearch() {
+        val q = query
+        if (q.isBlank()) return
+        Toast.makeText(context, "Aranıyor...", Toast.LENGTH_SHORT).show()
         scope.launch {
-            val r = withContext(Dispatchers.IO) {
-                PdfTextSearch.search(context, file.path, query)
-            }
-            results = r
+            val r = withContext(Dispatchers.IO) { PdfSearch.find(index, doc.count, q) }
+            matches = r.matches
+            matchTexts = r.texts
             current = 0
-            if (r.isEmpty()) {
+            if (r.matches.isEmpty()) {
                 Toast.makeText(context, "Sonuç bulunamadı", Toast.LENGTH_SHORT).show()
             } else {
-                listState.scrollToItem(r[0])
+                goToMatch(r.matches[0])
             }
         }
     }
 
     fun move(d: Int) {
-        if (results.isEmpty()) return
-        current = (current + d + results.size) % results.size
-        scope.launch { listState.scrollToItem(results[current]) }
+        if (matches.isEmpty()) return
+        current = (current + d + matches.size) % matches.size
+        val m = matches[current]
+        scope.launch { goToMatch(m) }
     }
 
     fun share() {
@@ -153,7 +170,7 @@ fun PdfViewerScreen(file: DocFile, onBack: () -> Unit) {
                 title = file.name.substringBeforeLast('.'),
                 searching = searching,
                 query = query,
-                resultText = if (results.isEmpty()) "" else "${current + 1}/${results.size}",
+                resultText = if (matches.isEmpty()) "" else "${current + 1}/${matches.size}",
                 onQueryChange = { query = it },
                 onSubmit = { runSearch() },
                 onBack = onBack,
@@ -196,7 +213,16 @@ fun PdfViewerScreen(file: DocFile, onBack: () -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     items(count = doc.count) { i ->
-                        PdfPageItem(doc, i, widthPx, sel, selText)
+                        PdfPageItem(
+                            doc,
+                            i,
+                            widthPx,
+                            sel,
+                            selText,
+                            matchesByPage[i] ?: emptyList(),
+                            matchTexts[i],
+                            matches.getOrNull(current)
+                        )
                     }
                 }
             }
