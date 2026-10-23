@@ -28,7 +28,10 @@ fun PdfPageItem(
     index: Int,
     widthPx: Int,
     sel: PdfSel?,
-    text: PdfPageText?
+    text: PdfPageText?,
+    matches: List<PdfMatch>,
+    matchText: PdfPageText?,
+    current: PdfMatch?
 ) {
     val bmp by produceState<Bitmap?>(null, index) {
         value = withContext(Dispatchers.Default) {
@@ -44,6 +47,9 @@ fun PdfPageItem(
                 contentScale = ContentScale.FillWidth,
                 modifier = Modifier.fillMaxWidth()
             )
+            if (matchText != null && matches.isNotEmpty()) {
+                MatchOverlay(matchText, matches, current, Modifier.matchParentSize())
+            }
             if (sel != null && sel.page == index && text != null && text.chars.isNotEmpty()) {
                 SelectionOverlay(text, sel, Modifier.matchParentSize())
             }
@@ -55,6 +61,30 @@ fun PdfPageItem(
                 .height(400.dp)
                 .background(Color.White)
         )
+    }
+}
+
+@Composable
+private fun MatchOverlay(
+    text: PdfPageText,
+    matches: List<PdfMatch>,
+    current: PdfMatch?,
+    modifier: Modifier
+) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        for (m in matches) {
+            val color = if (m === current) Color(0x99FF9800) else Color(0x88FFEB3B)
+            val rects = PdfSelect.lineRects(text, m.start, m.end)
+            for (r in rects) {
+                drawRect(
+                    color = color,
+                    topLeft = Offset(r[0] * w, r[1] * h),
+                    size = Size((r[2] - r[0]) * w, (r[3] - r[1]) * h)
+                )
+            }
+        }
     }
 }
 
