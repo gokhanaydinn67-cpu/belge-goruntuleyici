@@ -20,8 +20,11 @@ jobs:
         with:
           gradle-version: 8.7
 
+      - name: Decode keystore
+        run: cat keystore/part1.txt keystore/part2.txt | tr -d '\n\r ' | base64 -d > app/belge-key.jks
+
       - name: Build release APK
-        run: gradle assembleRelease
+        run: gradle assembleRelease -PverCode=${{ github.run_number }}
 
       - uses: actions/upload-artifact@v4
         with:
