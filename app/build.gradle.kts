@@ -3,6 +3,8 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val verCode: Int = (project.findProperty("verCode") as String?)?.toIntOrNull() ?: 1
+
 android {
     namespace = "com.belge.goruntuleyici"
     compileSdk = 34
@@ -11,14 +13,23 @@ android {
         applicationId = "com.belge.goruntuleyici"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = verCode
+        versionName = "1.$verCode"
+    }
+
+    signingConfigs {
+        create("release") {
+            storeFile = file("belge-key.jks")
+            storePassword = "5UJFOumaFgQepKqjRkZI"
+            keyAlias = "belge"
+            keyPassword = "5UJFOumaFgQepKqjRkZI"
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 
